@@ -70,7 +70,7 @@ int main(int argc, char** argv)
   // Optionally print the decoded instructions for debugging
   // Will not work until you implement decode_instructions
   // Do not call this function in your handed in final version
-  print_instructions(instructions, num_instructions);
+  //print_instructions(instructions, num_instructions);
 
 
 // Once you have completed part 1 (decoding instructions), uncomment the below block
@@ -79,11 +79,19 @@ int main(int argc, char** argv)
   //Allocate and initialize registers
   unsigned int* registers = (unsigned int*)malloc(sizeof(unsigned int) * NUM_REGS);
   //TODO: initialize register values
+  for(int i =0; i < sizeof(registers); i++){
+    if(i == 8 ){
+      registers[i] = 1024;
+    }
+    registers[i] = 0;
+  }
 
   //Stack memory is byte-addressed, so it must be a 1-byte type
   //TODO allocate the stack memory. Do not assign to NULL.
-  unsigned char* memory = NULL;
-
+  unsigned char* memory = (unsigned char*)malloc(sizeof(unsigned char) * STACK_SIZE);
+  for(int i =0; i < sizeof(memory); i++){
+    memory[i] = 0;
+  }
 
   //Run the simulation
   unsigned int program_counter = 0;
@@ -148,13 +156,26 @@ unsigned int execute_instruction(unsigned int program_counter, instruction_t* in
   case addl_reg_reg:
     registers[instr.second_register] = registers[instr.first_register] + registers[instr.second_register];
     break;
+  case addl_imm_reg:
+    registers[instr.first_register] = registers[instr.first_register] + (int)instr.immediate;
+  case imull:
+    registers[instr.second_register] = registers[instr.first_register] * registers[instr.second_register];
+  case shrl:
+    registers[instr.first_register] = registers[instr.first_register] >> 1;
+  case movl_reg_reg:
+    registers[instr.second_register] = registers[instr.first_register];
+  case movl_deref_reg:
+    registers[instr.second_register] = memory[registers[instr.first_register] + (int)instr.immediate];
+  case movl_reg_deref:
+    memory[registers[instr.second_register] + (int)instr.immediate] = registers[instr.first_register];
+  case movl_imm_reg:
+    registers[instr.first_register] = 
   case printr:
     printf("%d (0x%x)\n", registers[instr.first_register], registers[instr.first_register]);
     break;
   case readr:
     scanf("%d", &(registers[instr.first_register]));
     break;
-
 
   // TODO: Implement remaining instructions
 
