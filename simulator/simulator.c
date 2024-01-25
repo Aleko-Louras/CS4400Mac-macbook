@@ -76,13 +76,14 @@ int main(int argc, char** argv)
 
 // Once you have completed part 1 (decoding instructions), uncomment the below block
 
-
+  
   //Allocate and initialize registers
   unsigned int* registers = (unsigned int*)malloc(sizeof(unsigned int) * NUM_REGS);
   //TODO: initialize register values
   for(int i =0; i < sizeof(registers); i++){
     if(i == 8 ){
       registers[i] = 1024;
+      continue;
     }
     registers[i] = 0;
   }
@@ -166,11 +167,79 @@ unsigned int execute_instruction(unsigned int program_counter, instruction_t* in
   case movl_reg_reg:
     registers[instr.second_register] = registers[instr.first_register];
   case movl_deref_reg:
-    memcpy(&memory[registers[instr.first_register] + (int)instr.immediate], &registers[instr.second_register], 4 * sizeof(char));// registers[instr.second_register] = memory[registers[instr.first_register] + (int)instr.immediate];
-  case movl_reg_deref:
     memcpy(&registers[instr.second_register], &memory[registers[instr.first_register] + (int)instr.immediate], 4 * sizeof(char));
+    // registers[instr.second_register] = memory[registers[instr.first_register] + (int)instr.immediate];
+  case movl_reg_deref:
+    memcpy(&memory[registers[instr.second_register] + (int)instr.immediate], &registers[instr.first_register], 4 * sizeof(char));
   case movl_imm_reg:
     registers[instr.first_register] = (int)instr.immediate;//registers[instr.first_register] = 
+  case cmpl: ;
+    long result = (long)registers[instr.second_register] - (long)registers[instr.first_register];
+    if((result > INT32_MAX || result < INT32_MIN) ){//signed overflow
+      registers[0] || (1 << 10);
+    }
+    else if(result < 0){//unsigned overflow
+      registers[0] || 00000001;
+    }
+    else if((result >> 63) == 1){//signed flag set
+      registers[0] || (1 << 6);
+    }
+    else if(result == 0){
+      registers[0] || (1 << 5);
+    }
+  case je:
+    if(((registers[0] << (32 - 6)) >> 31) == 1){
+      return program_counter + instr.immediate + 4;
+    }
+    else{
+      return program_counter + 4;
+    }
+  case jl:
+    if(((registers[0] << (32 - 7)) >> 31 == 1) ^ (registers[0] << (32 -11) >> 31 ==1)){
+      return program_counter + instr.immediate +4;
+    }
+    else{
+      return program_counter +4;
+    }
+  case jle:
+    if(((registers[0] << (32 - 7)) >> 31 == 1) ^ (registers[0] << (32 -11) >> 31 ==1) || ((registers[0] << (32 - 6)) >> 31) == 1){
+      return program_counter + instr.immediate + 4;
+    }
+    else{
+      return program_counter + 4;
+    }
+  case jge:
+    if(!(((registers[0] << (32 - 7)) >> 31 == 1) ^ (registers[0] << (32 -11) >> 31 ==1))){
+      return program_counter + instr.immediate + 4;
+    }
+    else {
+      return program_counter +4;
+    }
+  case jbe:
+    if(((registers[0] << (31) >> 31 ) == 1) || (((registers[0] << (32 - 6)) >> 31) == 1)){
+      return program_counter + instr.immediate + 4;
+    }
+    else{
+      return program_counter + 4;
+    }
+  case call:
+    registers[8] = registers[8] - 4;
+    memcpy(&registers[8], &program_counter + 4, sizeof(program_counter) + 4);
+    return program_counter + instr.immediate + 4;
+  case ret:
+    if(registers[8] == 1024){
+      break;
+    }
+    else{
+      memcpy(&program_counter, &memory[registers[8]], 4 * sizeof(char));
+      registers[8] = registers[8] + 4;
+    }
+  case pushl:
+    registers[8] = registers[8] -4;
+    memcpy(&memory[registers[8]], &instr.first_register, sizeof(char));
+  case popl:
+    memcpy(&instr.first_register,&memory[registers[8]], sizeof(char) * 4);
+    registers[8] = registers[8] +4;
   case printr:
     printf("%d (0x%x)\n", registers[instr.first_register], registers[instr.first_register]);
     break;
