@@ -229,20 +229,20 @@ void eval(char *cmdline)
     }
     if(fork() == 0){//sibling that writes to the pipe
       close(fd[0]);
-      dup2(fd[1],1);
+      dup2(fd[1],1); //redirect the write end of process to write end of pipe
       if(execve(argv1[0], argv1, environ) == -1){
         exit(1);//if the execution returns and goes wrong, exit.
       }
     }
     if(fork()==0){//sibling that reads to the pipe
       close(fd[1]);
-      dup2(fd[0], 0);
+      dup2(fd[0], 0);// redirect the read end of process to read end of pipe.
       if(execve(argv2[0], argv2, environ)== -1){
-        exit(1);
+        exit(1);//if execve returns, exit.
       }
     }
     close(fd[0]);
-    close(fd[1]);
+    close(fd[1]); //close file descriptors of main process, wait for children to reap
     wait(NULL);
     wait(NULL);
     return;
@@ -258,27 +258,28 @@ void eval(char *cmdline)
   sigprocmask(SIG_BLOCK, &signal_set, NULL); // block SIGCHLD, SIGINT, SIGTSTP
   
   
-  if((childPid = fork()) == 0){
-    setpgid(0,0);
-    sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
+  if((childPid = fork()) == 0){//if child
+    setpgid(0,0);//make a new group of the child process
+    sigprocmask(SIG_UNBLOCK, &signal_set, NULL); //unblock the other signals
     if(execve(argv1[0], argv1, environ) == -1){
-      printf("%s: Command not found\n", argv1[0]);
+      //if execve returns, the command didnt exist
+      printf("%s: Command was not found\n", argv1[0]);
       exit(1);
     }
   }
 
-  if(bg){
-    addjob(jobs, childPid, BG, cmdline);
-    printf("[%d] (%d) %s", pid2jid(childPid), childPid, cmdline);
+  if(bg){ //if we are in the background
+    addjob(jobs, childPid, BG, cmdline);//add job to job list with background state
+    printf("[%d] (%d) %s", pid2jid(childPid), childPid, cmdline); 
     fflush(stdout);
-    sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
+    sigprocmask(SIG_UNBLOCK, &signal_set, NULL); //unblock the other signals
 
     return;
   }
-  else{
-    addjob(jobs,childPid, FG, cmdline);
-    sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
-    waitfg(childPid);
+  else{//we are in the foreground
+    addjob(jobs,childPid, FG, cmdline);//add job to job list with foreground state
+    sigprocmask(SIG_UNBLOCK, &signal_set, NULL);// unblock the other signals
+    waitfg(childPid); //wait for foreground job
   }
 
   return;
@@ -365,7 +366,7 @@ int builtin_cmd(char **argv)
     exit(0);
   }
   if(!strcmp(cmd, "jobs")){
-    listjobs(jobs);
+    listjobs(jobs);//list jobs for jobs command.
     fflush(stdout);
     return 1;
   }
@@ -380,7 +381,7 @@ int builtin_cmd(char **argv)
     }
 
     if (argv[1][0] == '%') {
-      jid = atoi(&argv[1][1]);
+      jid = atoi(&argv[1][1]);//get the job id 
     }
     else {
       printf("%s: argument must be a %%jobid\n", argv[0]);
@@ -394,11 +395,11 @@ int builtin_cmd(char **argv)
     return 1;
   }
 
-  if (!strcmp(cmd, "&")) { /* Ignore singleton & */
+  if (!strcmp(cmd, "&")) { //ignore single & argument
     return 1;
   }
 
-  return 0;     /* not a builtin command */
+  return 0;     
 }
 
 /* 
@@ -407,21 +408,25 @@ int builtin_cmd(char **argv)
 void do_bg(int jid) 
 {
   struct job_t* job = getjobjid(jobs, jid);
-  if(!job){
+  if(!job){//if job is not in joblist
     sio_puts("%");
+
     sio_putl(jid);
+
     sio_puts(": The job does not exist.\n");
+
     return;
   }
 
-  sio_puts("[");
+  sio_puts("["); //print: [jid] (pid) job
   sio_putl(job->jid);
   sio_puts("] (");
   sio_putl(job->pid);
   sio_puts(") ");
   sio_puts(job->cmdline);
 
-  kill(-1 * job->pid, SIGCONT);
+  kill(-1 * job->pid, SIGCONT); //send continue process signal to group id
+
   job->state = BG;
 
   return;
@@ -434,17 +439,18 @@ void do_fg(int jid)
 {
   struct job_t* job = getjobjid(jobs, jid);
 
-  if(!job){
+  if(!job){//if job is not in joblist
     sio_puts("%");
     sio_putl(jid);
     sio_puts(": The job does not exist.\n");
     return;
   }
   if(job->state == ST){
+    //if job is stopped, send a continue signal to its group id
     kill(-1 * job->pid, SIGCONT);
   }
-  job->state = FG;
-  waitfg(job->pid);
+  job->state = FG;//set state to foreground
+  waitfg(job->pid);//wait for the foreground job
 
   return;
 
@@ -477,7 +483,7 @@ void waitfg(pid_t pid)
 void sigchld_handler(int sig) 
 {
   pid_t zombiePid;
-  int olderrno = errno;
+  int lasterrno = errno;
   sigset_t signal_set;
   int status;
   struct job_t* job;
@@ -486,10 +492,12 @@ void sigchld_handler(int sig)
   sigaddset(&signal_set, SIGCHLD);
   sigaddset(&signal_set, SIGINT);
   sigaddset(&signal_set, SIGTSTP);
-  sigprocmask(SIG_BLOCK, &signal_set, NULL);
+  sigprocmask(SIG_BLOCK, &signal_set, NULL);//block sigchld, sigint, and sigtstp
 
+  //'while there are zombies that need to be reaped, reap them
   while((zombiePid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0){
-    if(WIFSTOPPED(status)){
+
+    if(WIFSTOPPED(status)){//set the jobs state to stopped by the signal and print to the terminal
       job = getjobpid(jobs, zombiePid);
       sio_puts("Job [");
       sio_putl(job->jid);
@@ -500,7 +508,7 @@ void sigchld_handler(int sig)
       sio_puts("\n");
       job->state = ST;
     }
-    if(WIFSIGNALED(status)){
+    if(WIFSIGNALED(status)){//delete from joblist if the process terminated with unhandled signal
       job = getjobpid(jobs, zombiePid);
       sio_puts("Job [");
       sio_putl(job->jid);
@@ -510,15 +518,15 @@ void sigchld_handler(int sig)
       sio_putl(WTERMSIG(status));
       sio_puts("\n");
 
-            deletejob(jobs, zombiePid);
+      deletejob(jobs, zombiePid);
     }
-    if(WIFEXITED(status)){
+    if(WIFEXITED(status)){//if process terminated normally, delete from joblist 
       deletejob(jobs, zombiePid);
     }
   }
 
-  errno = olderrno;
-  sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
+  errno = lasterrno;
+  sigprocmask(SIG_UNBLOCK, &signal_set, NULL);//unblock signals
   return;
 }
 
@@ -532,7 +540,7 @@ void sigint_handler(int sig)
   sigset_t signal_set;
   struct job_t* job;
 
-  //make the signal set, that blocks the other signals, but catch sig
+  //make the signal set, that blocks the other signals, and send the signal passed in (SIGINT).
   sigemptyset(&signal_set);
   sigaddset(&signal_set, SIGCHLD);
   sigaddset(&signal_set, SIGINT);
@@ -541,6 +549,8 @@ void sigint_handler(int sig)
 
   job = get_foreground_job(jobs);
   kill(-1 * job->pid, sig);
+
+  //unblock the other signals
   sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
   return;
 }
@@ -555,7 +565,7 @@ void sigtstp_handler(int sig)
   sigset_t signal_set;
   struct job_t* job;
 
-  //make the signal set, that blocks the other signals, but catch sig
+  //make the signal set, that blocks the other signals, but send signal to suspend the process (SGTSTP)
   sigemptyset(&signal_set);
   sigaddset(&signal_set, SIGCHLD);
   sigaddset(&signal_set, SIGINT);
@@ -564,6 +574,8 @@ void sigtstp_handler(int sig)
 
   job = get_foreground_job(jobs);
   kill(-1 * job->pid, sig);
+
+  //unblock the other signals
   sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
   return;
 }
